@@ -212,7 +212,7 @@ usage(int argc, char *argv[], size_t w, size_t h) {
     size_t w_div = argc == 1 ? 2 : std::stol(argv[1]);
     size_t h_div = argc == 1 ? 2 : std::stol(argv[2]);
 
-    if (((w/w_div) < 4) || ((h/h_div) < 4)){
+    if (((w/w_div) < 1) || ((h/h_div) < 1)){
         std::cerr << "The minimum region width and height is 4" << std::endl;
         exit(1);
     }
@@ -231,7 +231,7 @@ void write_output_file(const std::unique_ptr<Vec[]>& c, size_t w, size_t h)
 }
 
 int main(int argc, char *argv[]){
-    size_t w=1024, h=768, samps = 2; // # samples
+    size_t w=1024, h=768, samps = 100; // # samples
 
     Ray cam(Vec(50,52,295.6), Vec(0,-0.042612,-1).norm()); // cam pos, dir
     Vec cx=Vec(w*.5135/h), cy=(cx%cam.d).norm()*.5135;
@@ -246,9 +246,40 @@ int main(int argc, char *argv[]){
     auto *c_ptr = c.get(); // raw pointer to Vector c
 
     // create a thread pool
+    {
+    thread_pool pool;
+
+    auto chunk_w = w / w_div;
+    auto chunk_h = h / h_div;
+
+    std::cout << chunk_w << " " << chunk_h << std::endl;
 
     // launch the tasks
+    Region r{0, 0, 0, 0};
+    for(size_t i = 0; i < w_div; ++i){
 
+        r.x0 = r.x1;
+        r.x1 = r.x0 + chunk_w;     
+        r.y0 = 0;
+        r.y1 = 0;
+
+        if(w > (size_t)r.x1 && w < (size_t)r.x1 + chunk_w)
+            r.x1 += w - r.x1;
+
+        for(size_t j = 0; j < h_div; ++j){
+
+            r.y0 = r.y1;
+            r.y1 = r.y0 + chunk_h;
+
+            if(h > (size_t)r.y1 && h < (size_t)r.y1 + chunk_h)
+                r.y1 += h - r.y1;
+
+            //std::cout << "Region: " << r.x0 << " " << r.x1 << " " << r.y0 << " " << r.y1 << std::endl;
+            pool.submit([=]{render(w, h, samps, cam, cx, cy, c_ptr, r);});
+            
+        }
+    }
+    }
 
     // wait for completion
     auto stop = std::chrono::steady_clock::now();

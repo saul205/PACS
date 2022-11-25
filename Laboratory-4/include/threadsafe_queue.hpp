@@ -9,40 +9,75 @@ template<typename T>
 class threadsafe_queue
 {
   private:
-      // please complete
+      mutable std::mutex _mutex;
+      std::condition_variable _cv;
+      std::queue<T> _queue;
 
   public:
     threadsafe_queue() {}
 
     threadsafe_queue(const threadsafe_queue& other)
     {
-	// please complete
+        std::lock_guard<std::mutex> lock(other._mutex);
+
+        _queue = std::move(other._queue);
     }
 
     threadsafe_queue& operator=(const threadsafe_queue&) = delete;
 
     void push(T new_value)
     {
-	// please complete
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+
+            _queue.push(new_value);
+        }
+
+        _cv.notify_all();
     }
 
     bool try_pop(T& value)
     {
-	// please complete
-    }
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        bool cond = !_queue.empty();
+        if(cond){
+            value = _queue.front();
+            _queue.pop();
+        }
+        
+        return cond;
+    }   
 
     void wait_and_pop(T& value)
     {
-	// please complete
+        std::unique_lock<std::mutex> lock(_mutex);
+
+        _cv.wait(lock, [this]{ return !_queue.empty(); });
+
+        value = _queue.front();
+        _queue.pop();
+
+        lock.unlock();
     }
 
     std::shared_ptr<T> wait_and_pop()
     {
-	// please complete
+        std::unique_lock<std::mutex> lock(_mutex);
+        _cv.wait(lock, [this]{ return !_queue.empty(); });
+
+        std::shared_ptr<T> value(std::make_shared<T>(_queue.front()));
+        _queue.pop();
+
+        lock.unlock();
+
+        return value;
     }
 
     bool empty() const
     {
-	// please complete
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        return _queue.empty();
     }
 };

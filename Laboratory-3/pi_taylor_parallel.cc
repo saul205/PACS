@@ -11,10 +11,16 @@ using my_float = long double;
 
 void
 pi_taylor_chunk(std::vector<my_float> &output,
-        size_t thread_id, size_t start_step, size_t stop_step) {
+        const size_t &thread_id, const size_t& start_step, const size_t &stop_step) {
 
+    my_float res = 0.;
+    int sign = start_step % 2 == 0 ? 1 : -1;
+    for(size_t i = start_step; i < stop_step; i++){
+        res += sign / (1.l + 2.l*i);
+        sign = -sign;
+    }
 
-
+    output[thread_id] = 4.*res;
 }
 
 std::pair<size_t, size_t>
@@ -44,12 +50,34 @@ int main(int argc, const char *argv[]) {
     auto threads = ret_pair.second;
 
     my_float pi;
-
+    std::vector<my_float> results(threads);
+    std::vector<std::thread> thread_vector;
+    auto chunk_size = steps / threads;
     // please complete missing parts
+
+    auto start = std::chrono::steady_clock::now();
+    for(size_t i = 0; i < threads-1; i++){
+        thread_vector.push_back(
+            std::thread(pi_taylor_chunk, std::ref(results), 
+                i, i * chunk_size, i*chunk_size + chunk_size)
+        );
+    }
+
+    pi_taylor_chunk(std::ref(results), threads-1, (threads-1)*chunk_size, (threads-1)*chunk_size + chunk_size);
+
+    for(size_t i = 0; i < threads-1; i++){
+        thread_vector[i].join();
+    }
+    auto stop = std::chrono::steady_clock::now();
+
+    pi = std::accumulate(results.begin(), results.end(), (my_float)0);
+
+    std::chrono::duration<my_float> duration = stop - start;
 
 
     std::cout << "For " << steps << ", pi value: "
         << std::setprecision(std::numeric_limits<long double>::digits10 + 1)
         << pi << std::endl;
+    std::cout << "Elapsed time: " << duration.count() << std::endl;
 }
 
