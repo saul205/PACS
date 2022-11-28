@@ -26,8 +26,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <numeric>
 
-#include <thread_pool.hpp>
+#include <thread_pool_lfree.hpp>
 
 // Vec is a structure to store position (x,y,z) and color (r,g,b)
 struct Vec {
@@ -219,9 +220,9 @@ usage(int argc, char *argv[], size_t w, size_t h) {
     return std::make_pair(w_div, h_div);
 }
 
-void write_output_file(const std::unique_ptr<Vec[]>& c, size_t w, size_t h)
+void write_output_file(const std::unique_ptr<Vec[]>& c, size_t w, size_t h, std::string sufix)
 {
-    std::ofstream ofile("image3.ppm", std::ios::out);
+    std::ofstream ofile("image3" + sufix + ".ppm", std::ios::out);
     ofile << "P3" << std::endl;
     ofile << w << " " << h << std::endl;
     ofile << "255" << std::endl;
@@ -231,7 +232,7 @@ void write_output_file(const std::unique_ptr<Vec[]>& c, size_t w, size_t h)
 }
 
 int main(int argc, char *argv[]){
-    size_t w=1024, h=768, samps = 100; // # samples
+    size_t w=1024, h=768, samps = 2; // # samples
 
     Ray cam(Vec(50,52,295.6), Vec(0,-0.042612,-1).norm()); // cam pos, dir
     Vec cx=Vec(w*.5135/h), cy=(cx%cam.d).norm()*.5135;
@@ -241,50 +242,79 @@ int main(int argc, char *argv[]){
     auto w_div = p.first;
     auto h_div = p.second;
 
-    auto start = std::chrono::steady_clock::now();
+    std::string sufix = "_" + std::to_string(w_div) + "_" + std::to_string(h_div);
+    std::ofstream output("results" + sufix + ".txt");
+    std::vector<float> times;
 
-    auto *c_ptr = c.get(); // raw pointer to Vector c
+    for(int i = 0; i < 10; i++){
 
-    // create a thread pool
-    {
-    thread_pool pool;
+        auto start = std::chrono::steady_clock::now();
 
-    auto chunk_w = w / w_div;
-    auto chunk_h = h / h_div;
+        auto *c_ptr = c.get(); // raw pointer to Vector c
 
-    std::cout << chunk_w << " " << chunk_h << std::endl;
+        // create a thread pool
+        {
+        thread_pool_lfree pool;
 
-    // launch the tasks
-    Region r{0, 0, 0, 0};
-    for(size_t i = 0; i < w_div; ++i){
+        auto chunk_w = w / w_div;
+        auto chunk_h = h / h_div;
 
-        r.x0 = r.x1;
-        r.x1 = r.x0 + chunk_w;     
-        r.y0 = 0;
-        r.y1 = 0;
+        std::cout << chunk_w << " " << chunk_h << std::endl;
 
-        if(w > (size_t)r.x1 && w < (size_t)r.x1 + chunk_w)
-            r.x1 += w - r.x1;
+        // launch the tasks
+        Region r{0, 0, 0, 0};
+        for(size_t i = 0; i < w_div; ++i){
 
-        for(size_t j = 0; j < h_div; ++j){
+            r.x0 = r.x1;
+            r.x1 = r.x0 + chunk_w;     
+            r.y0 = 0;
+            r.y1 = 0;
 
-            r.y0 = r.y1;
-            r.y1 = r.y0 + chunk_h;
+            if(w > (size_t)r.x1 && w < (size_t)r.x1 + chunk_w)
+                r.x1 += w - r.x1;
 
-            if(h > (size_t)r.y1 && h < (size_t)r.y1 + chunk_h)
-                r.y1 += h - r.y1;
+            for(size_t j = 0; j < h_div; ++j){
 
-            //std::cout << "Region: " << r.x0 << " " << r.x1 << " " << r.y0 << " " << r.y1 << std::endl;
-            pool.submit([=]{render(w, h, samps, cam, cx, cy, c_ptr, r);});
-            
+                r.y0 = r.y1;
+                r.y1 = r.y0 + chunk_h;
+
+                if(h > (size_t)r.y1 && h < (size_t)r.y1 + chunk_h)
+                    r.y1 += h - r.y1;
+
+                //std::cout << "Region: " << r.x0 << " " << r.x1 << " " << r.y0 << " " << r.y1 << std::endl;
+                pool.submit([=]{render(w, h, samps, cam, cx, cy, c_ptr, r);});
+                
+            }
         }
-    }
+        }
+
+        // wait for completion
+        auto stop = std::chrono::steady_clock::now();
+        std::cout << "Execution time: " <<
+        std::chrono::duration_cast<std::chrono::milliseconds>(stop-start).count() << " ms." << std::endl;
+
+        times.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stop-start).count());
+
+        if(i < 9)
+            c = std::unique_ptr<Vec[]>{new Vec[w*h]};
     }
 
-    // wait for completion
-    auto stop = std::chrono::steady_clock::now();
-    std::cout << "Execution time: " <<
-      std::chrono::duration_cast<std::chrono::milliseconds>(stop-start).count() << " ms." << std::endl;
+    float mean = 0, std = 0;
+    for(float time : times){
+        output << time << " "; 
 
-    write_output_file(c, w, h);
+        mean += time;
+    }
+    mean /= times.size();
+    for(float time : times){
+        output << time << " "; 
+
+        std += (time - mean) * (time - mean);
+    }
+
+    std = sqrt(std / times.size());
+    
+    output << std::endl << std::to_string(mean) << " " << std::to_string(std);
+
+    write_output_file(c, w, h, sufix);
 }

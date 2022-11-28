@@ -1,9 +1,13 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
-#include <chrono>
-#include <vector>
 #include <numeric>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+#include <fstream>
+#include <cmath>
 
 // Allow to change the floating point type
 using my_float = long double;
@@ -48,4 +52,18 @@ int main(int argc, const char *argv[]) {
     }
 
     std::cout << "Mean Elapsed time: " << std::accumulate(times.begin(), times.end(), (my_float)0) / (my_float)nTimes << std::endl;
+
+    std::fstream output("results_lab_3_sequential.txt", std::fstream::app);
+    output << "N_steps: " << steps << std::endl;
+    my_float mean = std::accumulate(times.begin(), times.end(), (my_float)0) / (my_float)nTimes;
+    my_float std = 0;
+    for(float time : times){
+        output << time << " "; 
+        std += (time - mean) * (time - mean);
+    }
+
+    std = sqrt(std / times.size());
+    
+    output << std::endl << std::to_string(mean) << " " << std::to_string(std) << " " << std::to_string(std/mean);
+    output << std::endl << std::endl;
 }

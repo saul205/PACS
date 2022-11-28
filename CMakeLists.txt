@@ -5,7 +5,7 @@ include(BuildType)
 
 project (PACS_EXAMPLES)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # disable clang-tidy to avoid compilation issues
 # set(CMAKE_CXX_CLANG_TIDY "clang-tidy;-checks=*")
