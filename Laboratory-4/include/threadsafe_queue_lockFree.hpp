@@ -32,13 +32,24 @@ class threadsafe_queue_lockFree
     }
 
     ~threadsafe_queue_lockFree(){
+
+        std::shared_ptr<node_t> node = head.load();
+        std::shared_ptr<node_t> killer;
+        head.store(nullptr);
+        tail.store(nullptr);
+        while(node != nullptr){
+            
+            std::swap(killer, node);
+            node = killer->next.load();
+            killer.reset();
+        }
     }
 
     threadsafe_queue_lockFree& operator=(const threadsafe_queue_lockFree&) = delete;
 
     void push(const T& new_value)
     {
-        std::shared_ptr<node_t> node_aux = std::make_shared<node_t>();
+        std::shared_ptr<node_t> node_aux(new node_t());
         node_aux->value = new_value;
         node_aux->next.store(nullptr);
         std::atomic<std::shared_ptr<node_t>> node = node_aux;
@@ -61,7 +72,7 @@ class threadsafe_queue_lockFree
 
     bool try_pop(T& value)
     {
-        std::shared_ptr<node_t> head_aux; 
+        std::shared_ptr<node_t> head_aux(new node_t()); 
         for(;;){
             head_aux = head.load();
             std::shared_ptr<node_t> tail_aux = tail.load();
@@ -82,6 +93,7 @@ class threadsafe_queue_lockFree
                 }
             }
         }
+        head_aux.reset();
         return true;
     }   
 

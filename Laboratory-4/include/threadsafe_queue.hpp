@@ -80,4 +80,9 @@ class threadsafe_queue
 
         return _queue.empty();
     }
+
+    void print(bool count){
+        if(count)
+            std::cout << this->_queue.size() << std::endl;
+    }
 };
