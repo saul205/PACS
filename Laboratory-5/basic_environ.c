@@ -107,7 +107,80 @@ int main(int argc, char** argv)
   command_queue = clCreateCommandQueueWithProperties(context, device_id, proprt, &err);
   cl_error(err, "Failed to create a command queue\n");
 
+  // Calculate size of the file
+  FILE *fileHandler = fopen("kernel.cl", "r");
+  fseek(fileHandler, 0, SEEK_END);
+  size_t fileSize = ftell(fileHandler);
+  rewind(fileHandler);
 
+  // read kernel source into buffer
+  char * sourceCode = (char*) malloc(fileSize + 1);
+  sourceCode[fileSize] = '\0';
+  fread(sourceCode, sizeof(char), fileSize, fileHandler);
+  fclose(fileHandler);
+  
+  printf(" Program: %s", sourceCode);
+
+  // create program from buffer
+  cl_program program = clCreateProgramWithSource(context, 1, (const char**)&sourceCode, NULL, &err);
+  cl_error(err, "Failed to create program with source\n");
+  free(sourceCode);
+  
+  // Build the executable and check errors
+  err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
+  if (err != CL_SUCCESS){
+    size_t len;
+    char buffer[2048];
+
+    printf("Error: Some error at building process.\n");
+    clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_STATUS, sizeof(buffer), &buffer, &len);
+    printf("%s\n", buffer);
+    exit(-1);
+  }
+  
+  // Create a compute kernel with the program we want to run
+  cl_kernel kernel = clCreateKernel(program, "pow_of_two", &err);
+  cl_error(err, "Failed to create kernel from the program\n");
+  
+  int count = 2;
+  
+    // Create OpenCL buffer visible to the OpenCl runtime
+  cl_mem in_device_object  = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float)*count, NULL, &err);
+  cl_error(err, "Failed to create memory buffer at device\n");
+  cl_mem out_device_object = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(float)*count, NULL, &err);
+  cl_error(err, "Failed to create memory buffer at device\n");
+  
+  float input[] = { 3.0f, 4.0f };
+  // Write date into the memory object 
+  err = clEnqueueWriteBuffer(command_queue, in_device_object, CL_TRUE, 0, sizeof(float) * count,
+                             input, 0, NULL, NULL);
+  cl_error(err, "Failed to enqueue a write command\n");
+  
+    // Set the arguments to the kernel
+  err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &in_device_object);
+  cl_error(err, "Failed to set argument 0\n");
+  err = clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_device_object);
+  cl_error(err, "Failed to set argument 1\n");
+  err = clSetKernelArg(kernel, 2, sizeof(count), &count);
+  cl_error(err, "Failed to set argument 2\n");
+  
+  // Launch Kernel
+  local_size = 128;
+  global_size = 128*count;
+  err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_size, &local_size, 0, NULL, NULL);
+  cl_error(err, "Failed to launch kernel to the device\n");
+  
+  float result[count];
+    // Read data form device memory back to host memory
+  err = clEnqueueReadBuffer(command_queue, out_device_object, CL_TRUE, 0, sizeof(float)*count, &result, 0, NULL, NULL);
+  printf("Result: %f - %f\n", result[0], result[1]);
+  
+  clReleaseMemObject(in_device_object);
+  clReleaseMemObject(out_device_object);
+  clReleaseProgram(program);
+  clReleaseKernel(kernel);
+  clReleaseCommandQueue(command_queue);
+  clReleaseContext(context);
 
   return 0;
 }
