@@ -15,12 +15,14 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <time.h>
 #ifdef __APPLE__
   #include <OpenCL/opencl.h>
 #else
   #include <CL/cl.h>
 #endif
 #include "CImg/CImg.h"
+
 
 using namespace cimg_library;
   
@@ -36,6 +38,10 @@ void cl_error(cl_int code, const char *string){
 
 int main(int argc, char** argv)
 {
+
+  clock_t time, total_time;
+  time = clock();
+
   int err;                            	// error code returned from api calls
   size_t t_buf = 50;			// size of str_buffer
   char str_buffer[t_buf];		// auxiliary buffer	
@@ -86,8 +92,6 @@ int main(int argc, char** argv)
   sourceCode[fileSize] = '\0';
   fread(sourceCode, sizeof(char), fileSize, fileHandler);
   fclose(fileHandler);
-  
-  printf(" Program: %s", sourceCode);
 
   // create program from buffer
   cl_program program = clCreateProgramWithSource(context, 1, (const char**)&sourceCode, NULL, &err);
@@ -101,44 +105,103 @@ int main(int argc, char** argv)
     char buffer[2048];
 
     printf("Error: Some error at building process.\n");
-    clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_STATUS, sizeof(buffer), &buffer, &len);
+    clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, sizeof(buffer), &buffer, &len);
     printf("%s\n", buffer);
+    
     exit(-1);
   }
 
-	CImg<unsigned char> img("image.jpg");
+	CImg<unsigned char> img_show("image.jpg");
+  CImg<unsigned char> img("image.jpg");
 	unsigned char* image_array = img.data();
+  unsigned long size_img = sizeof(unsigned char)*img.height()*img.width()*img.depth()*3;
+  printf("Img size: %d, %d, %d, %ld\n", img.height(), img.width(), img.depth(), size_img);
   
   // Create a compute kernel with the program we want to run
   cl_kernel kernel = clCreateKernel(program, "flip", &err);
   cl_error(err, "Failed to create kernel from the program\n");
   
   // Create OpenCL buffer visible to the OpenCl runtime
-  cl_mem in_device_object  = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(image_array), NULL, &err);
+  cl_mem input  = clCreateBuffer(context, CL_MEM_READ_WRITE, size_img, NULL, &err);
   cl_error(err, "Failed to create memory buffer at device\n");
   
+
+  cl_event kernel_event[3];
   // Write date into the memory object 
-  err = clEnqueueWriteBuffer(command_queue, in_device_object, CL_TRUE, 0, sizeof(image_array),
-                             image_array, 0, NULL, NULL);
+  err = clEnqueueWriteBuffer(command_queue, input, CL_TRUE, 0, size_img,
+                             image_array, 0, NULL, &kernel_event[0]);
+  cl_error(err, "Failed to enqueue a write command\n");
+  
+  int h_w[] = { img.height(), img.width(), img.width() * img.height() * img.spectrum() / 2};
   cl_error(err, "Failed to enqueue a write command\n");
   
   // Set the arguments to the kernel
-  err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &in_device_object);
+  err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &input);
   cl_error(err, "Failed to set argument 0\n");
-  
+
+  err = clSetKernelArg(kernel, 1, sizeof(int), &h_w[0]);
+  cl_error(err, "Failed to set argument 1\n");
+
+  err = clSetKernelArg(kernel, 2, sizeof(int), &h_w[1]);
+  cl_error(err, "Failed to set argument 2\n");
+
+  err = clSetKernelArg(kernel, 3, sizeof(int), &h_w[2]);
+  cl_error(err, "Failed to set argument 3\n");
+
   // Launch Kernel
-  size_t local_size[] = { img.width(), 1 };
-  size_t global_size[] = { img.width(), img.height() };
-  err = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_size, local_size, 0, NULL, NULL);
+  size_t local_size = 64;
+  size_t global_size = ((img.width() * img.height() * img.spectrum() / 2) / 64 + 1) * 64;
+  printf("Sizes: %d, %d\n", global_size, local_size);
+  err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_size, &local_size, 0, NULL, &kernel_event[1]);
   cl_error(err, "Failed to launch kernel to the device\n");
   
-  img.display("My first CImg code"); 
+  err = clEnqueueReadBuffer(command_queue, input, CL_TRUE, 0, size_img,
+                             image_array, 0, NULL, &kernel_event[2]);
+  cl_error(err, "Failed to enqueue a write command\n");
   
-  clReleaseMemObject(in_device_object);
+  clWaitForEvents(3, kernel_event);
+
+  cl_ulong time_start;
+  cl_ulong time_end;
+  clGetEventProfilingInfo(kernel_event[0], CL_PROFILING_COMMAND_START, sizeof(time_start), &time_start, NULL);
+  clGetEventProfilingInfo(kernel_event[0], CL_PROFILING_COMMAND_END, sizeof(time_end), &time_end, NULL);
+  double nanoSeconds = time_end-time_start; 
+  printf("Write buffer execution time is: %0.3f milliseconds \n",nanoSeconds / 1000000.0);
+
+  clGetEventProfilingInfo(kernel_event[1], CL_PROFILING_COMMAND_START, sizeof(time_start), &time_start, NULL);
+  clGetEventProfilingInfo(kernel_event[1], CL_PROFILING_COMMAND_END, sizeof(time_end), &time_end, NULL);
+  double nanoSeconds2 = time_end-time_start; 
+  printf("OpenCl Kernel Execution time is: %0.3f milliseconds \n",nanoSeconds2 / 1000000.0);
+
+  clGetEventProfilingInfo(kernel_event[2], CL_PROFILING_COMMAND_START, sizeof(time_start), &time_start, NULL);
+  clGetEventProfilingInfo(kernel_event[2], CL_PROFILING_COMMAND_END, sizeof(time_end), &time_end, NULL);
+  double nanoSeconds3 = time_end-time_start; 
+  printf("Read buffer Execution time is: %0.3f milliseconds \n",nanoSeconds3 / 1000000.0);
+  
+  clReleaseMemObject(input);
   clReleaseProgram(program);
   clReleaseKernel(kernel);
   clReleaseCommandQueue(command_queue);
   clReleaseContext(context);
+
+  total_time = clock() - time;
+  printf("Total time elapsed: %.4f ms\n", ((float)total_time)/CLOCKS_PER_SEC);
+
+  FILE *fptr;
+  // use appropriate location if you are using MacOS or Linux
+  fptr = fopen("times.txt","a");
+
+  if(fptr == NULL)
+  {
+    printf("Error!");   
+    exit(1);             
+  }
+
+  fprintf(fptr,"%.4f %.4f %.4f %.4f\n",nanoSeconds / 1000000.0, nanoSeconds2 / 1000000.0, nanoSeconds3 / 1000000.0, ((float)total_time)/CLOCKS_PER_SEC);
+  fclose(fptr);
+
+  img_show.display();
+  img.display();
 
   return 0;
 }

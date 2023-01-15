@@ -1,12 +1,15 @@
 __kernel void flip(
-	__global unsigned char* img){
+	__global unsigned char* img,
+	int height, int width, int length){
 
-	int j = get_global_id(1);
-	int cols = get_global_size(0);	
+	int i = get_global_id(0);
 	
-	for(int i = 0; i < cols / 2; i++){
-		unsigned char aux = img[i][j];
-		img[i][j] = img[cols - i][j]
-		img[cols - i][j] = aux;
-	}
+	if(i >= length)
+		return;
+
+	int w2 = width / 2;
+
+	unsigned char aux = img[i % w2 + i / w2 * width];
+	img[i % w2 + i / w2 * width] = img[(width - 1 - i % w2) + i / w2 * width];
+	img[(width - 1 - i % w2) + i / w2 * width] = aux;
 }

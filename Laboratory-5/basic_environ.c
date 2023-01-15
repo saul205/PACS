@@ -118,8 +118,6 @@ int main(int argc, char** argv)
   sourceCode[fileSize] = '\0';
   fread(sourceCode, sizeof(char), fileSize, fileHandler);
   fclose(fileHandler);
-  
-  printf(" Program: %s", sourceCode);
 
   // create program from buffer
   cl_program program = clCreateProgramWithSource(context, 1, (const char**)&sourceCode, NULL, &err);

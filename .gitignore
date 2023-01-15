@@ -1,1 +1,6 @@
 build*
+
+images
+*.jpg
+*.png
+*.zip
